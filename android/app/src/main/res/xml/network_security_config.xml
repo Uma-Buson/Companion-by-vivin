@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Allows plain HTTP (cleartext) traffic only to the local dev tenant server.
+  Android blocks cleartext by default since API 28. This is scoped to the
+  current dev tenantUrl IP so production HTTPS tenant URLs stay protected -
+  remove this domain entry once tenantUrl points at a real https:// host.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">192.168.0.243</domain>
+    </domain-config>
+</network-security-config>

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "868751188751",
+    "project_id": "companion-vivin",
+    "storage_bucket": "companion-vivin.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:868751188751:android:408b367dbecde282c2d47a",
+        "android_client_info": {
+          "package_name": "com.companion.vivin"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCroFuibmylhpO7hu0rxJXCjYTuQ2N6G7c"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
