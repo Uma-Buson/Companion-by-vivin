@@ -416,11 +416,10 @@ class _TenantWebViewHolder {
     controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(AppColors.scaffoldBackground)
-      // The web app's own Logout button reloads to /auth/login, which
-      // onPageFinished below catches directly. This channel exists only as
-      // a fallback for any logout path that instead navigates via the
-      // client-side router (History API, no reload) - see
-      // _injectLogoutWatcher.
+      // The web app's own Logout button navigates to /auth/login via the
+      // client-side router (History API, no page reload) - this channel is
+      // how the pushState hook in _injectLogoutWatcher reports that back to
+      // the native side the instant it happens.
       ..addJavaScriptChannel(
         'CompanionLogoutChannel',
         onMessageReceived: (_) => onLoggedOut(),
@@ -478,12 +477,11 @@ class _TenantWebViewHolder {
               await _injectSessionAndGoToDashboard();
               return; // the dashboard page's own onPageFinished follows
             }
-            // The web app's Logout button turns out to trigger a real page
-            // reload to /auth/login (not pure client-side routing, as
-            // first assumed) - so it's caught here immediately, the moment
-            // the reload completes, rather than waiting for the next tick
-            // of the JS poll below (which left a ~2s window where the web
-            // login page was visibly showing before the native swap).
+            // Kept as a fallback in case some navigation to the login route
+            // is ever a real page load rather than client-side routing -
+            // the common case (the web app's actual Logout button) is a
+            // client-side route change instead, caught by the pushState
+            // hook in _injectLogoutWatcher below, which fires first.
             if (Uri.parse(url).path.startsWith('/auth/login')) {
               onLoggedOut();
               return;
@@ -543,22 +541,41 @@ class _TenantWebViewHolder {
     await controller.loadRequest(dashboardUri);
   }
 
-  /// Fallback for _handleWebLogout's normal path (a real page reload,
-  /// caught directly in onPageFinished): installs a small poll inside the
-  /// dashboard page's own JS that watches for the URL becoming the web
-  /// app's login route and reports it back over CompanionLogoutChannel, in
-  /// case some logout path instead navigates via the client-side router
-  /// (History API pushState, which no WebView navigation callback observes).
+  /// The web app's Logout button turns out to navigate via the client-side
+  /// router (History API pushState, not a real page reload) - the WebView's
+  /// own navigation callbacks never see it, so onPageFinished's direct
+  /// /auth/login check almost never fires first. This hooks pushState/
+  /// replaceState/popstate directly so the native side is notified the
+  /// instant the URL changes, instead of polling on an interval - a poll
+  /// left the web app's own login page visible on screen for up to its
+  /// interval's length (was 300ms) before the native swap caught up.
   Future<void> _injectLogoutWatcher() async {
     const script = '''
 (function() {
   if (window.__companionLogoutWatcherInstalled) return;
   window.__companionLogoutWatcherInstalled = true;
-  setInterval(function() {
+
+  function checkLoginRoute() {
     if (window.location.pathname.indexOf('/auth/login') === 0) {
       CompanionLogoutChannel.postMessage('logout');
     }
-  }, 300);
+  }
+
+  var origPushState = history.pushState;
+  history.pushState = function() {
+    var result = origPushState.apply(this, arguments);
+    checkLoginRoute();
+    return result;
+  };
+  var origReplaceState = history.replaceState;
+  history.replaceState = function() {
+    var result = origReplaceState.apply(this, arguments);
+    checkLoginRoute();
+    return result;
+  };
+  window.addEventListener('popstate', checkLoginRoute);
+
+  checkLoginRoute();
 })();
 ''';
     try {
