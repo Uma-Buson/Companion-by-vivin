@@ -21,11 +21,11 @@ void main() {
     // Verify Welcome Back text
     expect(find.text(AppStrings.loginTitle), findsOneWidget);
 
-    // Verify Username and Password input labels
+    // Phone-number-first flow: only the mobile number field and Next
+    // button show initially - the password field only appears once
+    // UserMaster confirms this number uses password login.
     expect(find.text(AppStrings.usernameLabel), findsOneWidget);
-    expect(find.text(AppStrings.passwordLabel), findsOneWidget);
-
-    // Verify Login button
-    expect(find.text(AppStrings.loginButton), findsOneWidget);
+    expect(find.text(AppStrings.passwordLabel), findsNothing);
+    expect(find.text(AppStrings.nextButton), findsOneWidget);
   });
 }
