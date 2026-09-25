@@ -5,12 +5,17 @@ class TenantMaster {
   final String tenantName;
   final String tenantStatus;
   final String tenantUrl;
+  // The companionAPI backend this tenant's login/session calls go through.
+  // Tenants normally share one backend (e.g. SATHYA/TESTCO), but a tenant
+  // with its own separate companiondb (e.g. Unilet) has its own here.
+  final String apiBaseUrl;
 
   const TenantMaster({
     required this.tenantId,
     required this.tenantName,
     required this.tenantStatus,
     required this.tenantUrl,
+    required this.apiBaseUrl,
   });
 
   bool get isActive => tenantStatus.toUpperCase() == 'ACTIVE';
@@ -21,6 +26,7 @@ class TenantMaster {
       tenantName: map['tenantName'] as String? ?? tenantId,
       tenantStatus: map['tenantStatus'] as String? ?? 'INACTIVE',
       tenantUrl: map['tenantUrl'] as String? ?? '',
+      apiBaseUrl: map['apiBaseUrl'] as String? ?? '',
     );
   }
 
@@ -29,5 +35,6 @@ class TenantMaster {
         'tenantName': tenantName,
         'tenantStatus': tenantStatus,
         'tenantUrl': tenantUrl,
+        'apiBaseUrl': apiBaseUrl,
       };
 }

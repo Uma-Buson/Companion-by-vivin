@@ -177,7 +177,8 @@ class AuthController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await _companionApiService.requestOtp(_pendingPhone!);
+      final baseUrl = await _primaryApiBaseUrl();
+      await _companionApiService.requestOtp(baseUrl, _pendingPhone!);
       _isLoading = false;
       notifyListeners();
       return true;
@@ -210,7 +211,8 @@ class AuthController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final customToken = await _companionApiService.verifyOtpAndLogin(_pendingPhone!, code);
+      final baseUrl = await _primaryApiBaseUrl();
+      final customToken = await _companionApiService.verifyOtpAndLogin(baseUrl, _pendingPhone!, code);
       final user = await _authService.loginWithCustomToken(customToken);
       return await _completeLoginAfterFirebaseAuth(user);
     } catch (e) {
@@ -219,6 +221,17 @@ class AuthController extends ChangeNotifier {
       notifyListeners();
       return false;
     }
+  }
+
+  /// The first known companionAPI backend, used for calls that don't care
+  /// which company a user belongs to (OTP generation/verification only
+  /// touch shared Firestore/Firebase, never a tenant's own companiondb).
+  Future<String> _primaryApiBaseUrl() async {
+    final urls = await _tenantService.getKnownApiBaseUrls();
+    if (urls.isEmpty) {
+      throw Exception(AppStrings.companionSessionError);
+    }
+    return urls.first;
   }
 
   /// Shared tail for both login paths: fetch the user's tenants and start
@@ -235,7 +248,8 @@ class AuthController extends ChangeNotifier {
     }
 
     try {
-      _companionSession = await _companionApiService.loginWithFirebase(user.token);
+      final baseUrls = await _tenantService.getKnownApiBaseUrls();
+      _companionSession = await _companionApiService.loginWithFirebaseTryingBackends(baseUrls, user.token);
     } catch (e) {
       await _authService.logout();
       _isLoading = false;

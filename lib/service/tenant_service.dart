@@ -40,6 +40,33 @@ class TenantService {
     return TenantMaster.fromMap(tenantId, snap.data()!);
   }
 
+  /// Every distinct companionAPI backend currently in use across active
+  /// tenants, SATHYA's own tried first. Most tenants share one backend, but
+  /// a tenant with its own separate companiondb (e.g. Unilet) adds another
+  /// entry - login tries each in turn since the app has no other way to
+  /// know which one a given phone number's account actually lives in.
+  Future<List<String>> getKnownApiBaseUrls() async {
+    final snap = await _tenantMaster.get();
+    final urls = <String>[];
+
+    for (final doc in snap.docs) {
+      if (doc.id != 'SATHYA') continue;
+      final tenant = TenantMaster.fromMap(doc.id, doc.data());
+      if (tenant.isActive && tenant.apiBaseUrl.isNotEmpty) {
+        urls.add(tenant.apiBaseUrl);
+      }
+      break;
+    }
+
+    for (final doc in snap.docs) {
+      if (doc.id == 'SATHYA') continue;
+      final tenant = TenantMaster.fromMap(doc.id, doc.data());
+      if (!tenant.isActive || tenant.apiBaseUrl.isEmpty) continue;
+      if (!urls.contains(tenant.apiBaseUrl)) urls.add(tenant.apiBaseUrl);
+    }
+    return urls;
+  }
+
   Future<void> deleteMapping(String uid, String tenantId) async {
     await _tenantMapping.doc(_mappingDocId(uid, tenantId)).delete();
   }

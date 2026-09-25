@@ -63,7 +63,11 @@ Future<void> main() async {
           // Also re-establish the web dashboard session, since the
           // WebView needs a fresh one to inject on this launch - the
           // previous one only lived in that now-gone WebView's localStorage.
-          final session = await CompanionApiService().loginWithFirebase(
+          // No upfront signal for which company this user belongs to, so
+          // try each known companionAPI backend in turn, same as at login.
+          final knownApiBaseUrls = await TenantService().getKnownApiBaseUrls();
+          final session = await CompanionApiService().loginWithFirebaseTryingBackends(
+            knownApiBaseUrls,
             restoredUser.token,
           );
           restoredTenants = tenants;

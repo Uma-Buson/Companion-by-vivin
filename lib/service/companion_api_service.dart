@@ -2,11 +2,13 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
-import '../constant/app_config.dart';
 import '../model/companion_session_model.dart';
 
 /// Talks to the companionAPI backend directly (as opposed to the web
-/// dashboard, which the app only ever drives through a WebView).
+/// dashboard, which the app only ever drives through a WebView). Every call
+/// takes the caller's tenant `baseUrl` explicitly - tenants can run on
+/// entirely separate companionAPI deployments (their own companiondb), so
+/// there is no single shared default to fall back to.
 class CompanionApiService {
   static const _timeout = Duration(seconds: 20);
 
@@ -14,8 +16,8 @@ class CompanionApiService {
   /// session, via the backend's `LoginWithFirebase` endpoint. That endpoint
   /// re-verifies the token server-side and issues the same kind of JWT a
   /// normal username/password login would.
-  Future<CompanionSession> loginWithFirebase(String idToken) async {
-    final uri = Uri.parse('${AppConfig.companionApiBaseUrl}/Login/LoginWithFirebase');
+  Future<CompanionSession> loginWithFirebase(String baseUrl, String idToken) async {
+    final uri = Uri.parse('$baseUrl/Login/LoginWithFirebase');
 
     final response = await http
         .post(
@@ -39,11 +41,35 @@ class CompanionApiService {
     return CompanionSession.fromJson(decoded.first as Map<String, dynamic>);
   }
 
+  /// LoginWithFirebase is the one call that's genuinely company-specific -
+  /// it reads the tenant's own companiondb to build the session. The app
+  /// has no upfront signal for which company a phone number belongs to, so
+  /// this tries each known backend in turn and keeps the first one that
+  /// recognizes the signed-in Firebase user.
+  Future<CompanionSession> loginWithFirebaseTryingBackends(
+    List<String> baseUrls,
+    String idToken,
+  ) async {
+    if (baseUrls.isEmpty) {
+      throw Exception('No companionAPI backend is configured.');
+    }
+
+    Object? lastError;
+    for (final baseUrl in baseUrls) {
+      try {
+        return await loginWithFirebase(baseUrl, idToken);
+      } catch (e) {
+        lastError = e;
+      }
+    }
+    throw lastError!;
+  }
+
   /// Step 2a of the phone-number-first login flow: asks the backend to
   /// generate and send an OTP for this mobile number. The code itself
   /// never comes back to the client - only whether the request succeeded.
-  Future<void> requestOtp(String mobileNo) async {
-    final uri = Uri.parse('${AppConfig.companionApiBaseUrl}/Login/RequestOtp');
+  Future<void> requestOtp(String baseUrl, String mobileNo) async {
+    final uri = Uri.parse('$baseUrl/Login/RequestOtp');
 
     final response = await http
         .post(
@@ -61,8 +87,8 @@ class CompanionApiService {
   /// Step 2a completion: verifies the OTP server-side and, on success,
   /// returns a Firebase custom token the app signs in with - the account's
   /// real password is never involved or exposed.
-  Future<String> verifyOtpAndLogin(String mobileNo, String code) async {
-    final uri = Uri.parse('${AppConfig.companionApiBaseUrl}/Login/VerifyOtpAndLogin');
+  Future<String> verifyOtpAndLogin(String baseUrl, String mobileNo, String code) async {
+    final uri = Uri.parse('$baseUrl/Login/VerifyOtpAndLogin');
 
     final response = await http
         .post(
