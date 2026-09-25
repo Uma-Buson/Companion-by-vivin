@@ -44,6 +44,10 @@ dependencies:
   firebase_auth: ^6.6.1
   cloud_firestore: ^6.10.0
   webview_flutter: ^4.13.0
+  webview_flutter_android: ^4.10.1
+  fluttertoast: ^9.0.0
+  http: ^1.6.0
+  shared_preferences: ^2.5.3
 
 dev_dependencies:
   flutter_test:

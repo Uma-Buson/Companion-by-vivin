@@ -3,12 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'constant/app_colors.dart';
 import 'constant/app_strings.dart';
+import 'model/companion_session_model.dart';
 import 'model/tenant_model.dart';
 import 'screens/login_screen.dart';
-import 'screens/tenant_selector_screen.dart';
 import 'screens/web_dashboard_screen.dart';
 import 'service/auth_service.dart';
+import 'service/companion_api_service.dart';
 import 'service/fcm_service.dart';
+import 'service/remote_firebase_config_service.dart';
 import 'service/security_service.dart';
 import 'service/tenant_service.dart';
 
@@ -25,13 +27,20 @@ Future<void> main() async {
     ),
   );
 
-  // Initialize Firebase & FCM Cloud Messaging
+  // Resolve Firebase config remotely (DNS TXT record -> URL -> JSON) rather
+  // than the static google-services.json baked into the build, so the
+  // Firebase project can be rotated without a new app release. Falls back
+  // to the last cached config if offline; only fails on a brand-new
+  // install with no network at all.
   bool firebaseReady = false;
+  String? firebaseConfigError;
   try {
-    await Firebase.initializeApp();
+    final options = await RemoteFirebaseConfigService().resolveFirebaseOptions();
+    await Firebase.initializeApp(options: options);
     firebaseReady = true;
     await FcmService().initialize();
   } catch (e) {
+    firebaseConfigError = e.toString();
     debugPrint('Firebase/FCM initialization note: $e');
   }
 
@@ -39,6 +48,7 @@ Future<void> main() async {
   // is taken straight to the tenant dashboard (or picker) instead of the
   // login screen.
   List<TenantMaster> restoredTenants = [];
+  CompanionSession? restoredSession;
   if (firebaseReady) {
     try {
       final restoredUser = await AuthService().tryRestoreSession();
@@ -50,13 +60,23 @@ Future<void> main() async {
           restoredUser.id,
         );
         if (tenants.isNotEmpty) {
+          // Also re-establish the web dashboard session, since the
+          // WebView needs a fresh one to inject on this launch - the
+          // previous one only lived in that now-gone WebView's localStorage.
+          final session = await CompanionApiService().loginWithFirebase(
+            restoredUser.token,
+          );
           restoredTenants = tenants;
+          restoredSession = session;
         } else {
           await AuthService().logout();
         }
       }
     } catch (e) {
       debugPrint('Session restore note: $e');
+      restoredTenants = [];
+      restoredSession = null;
+      await AuthService().logout();
     }
   }
 
@@ -67,13 +87,26 @@ Future<void> main() async {
     debugPrint('Security initialization note: $e');
   }
 
-  runApp(CompanionApp(restoredTenants: restoredTenants));
+  runApp(
+    CompanionApp(
+      restoredTenants: restoredTenants,
+      restoredSession: restoredSession,
+      firebaseConfigError: firebaseReady ? null : firebaseConfigError,
+    ),
+  );
 }
 
 class CompanionApp extends StatelessWidget {
   final List<TenantMaster> restoredTenants;
+  final CompanionSession? restoredSession;
+  final String? firebaseConfigError;
 
-  const CompanionApp({super.key, this.restoredTenants = const []});
+  const CompanionApp({
+    super.key,
+    this.restoredTenants = const [],
+    this.restoredSession,
+    this.firebaseConfigError,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -140,17 +173,93 @@ class CompanionApp extends StatelessWidget {
           ),
         ),
       ),
-      home: restoredTenants.isEmpty
-          ? const LoginScreen()
-          : restoredTenants.length == 1
-              ? WebDashboardScreen(
-                  tenantUrl: restoredTenants.first.tenantUrl,
-                  tenantName: restoredTenants.first.tenantName,
-                )
-              : TenantSelectorScreen(tenants: restoredTenants),
+      home: firebaseConfigError != null
+          ? _ConfigUnavailableScreen(error: firebaseConfigError!)
+          : (restoredTenants.isEmpty || restoredSession == null)
+              ? const LoginScreen()
+              : WebDashboardScreen(
+                  tenants: restoredTenants,
+                  session: restoredSession!,
+                ),
     );
   }
 }
+
+/// Shown only when Firebase config couldn't be resolved at all - no live
+/// DNS/network fetch succeeded AND no cached config exists locally. This
+/// should only realistically happen on a brand-new install with no
+/// network connectivity at first launch.
+class _ConfigUnavailableScreen extends StatelessWidget {
+  final String error;
+
+  const _ConfigUnavailableScreen({required this.error});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.scaffoldBackground,
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.cloud_off_rounded,
+                  size: 56,
+                  color: AppColors.primaryRed,
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Could not connect',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'This device needs an internet connection the first time '
+                  'the app starts. Please check your connection and try '
+                  'again.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: AppColors.textSecondary),
+                ),
+                const SizedBox(height: 20),
+                ElevatedButton(
+                  onPressed: () => main(),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

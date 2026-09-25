@@ -94,6 +94,25 @@ class AuthService {
     }
   }
 
+  /// Completes the OTP login path: signs in with a custom token minted
+  /// server-side by companionAPI after it verified the OTP, rather than a
+  /// password - the account's real password is never involved here.
+  Future<UserModel> loginWithCustomToken(String customToken) async {
+    try {
+      final credential = await _firebaseAuth.signInWithCustomToken(customToken);
+
+      final firebaseUser = credential.user;
+      if (firebaseUser == null) {
+        throw Exception(AppStrings.invalidCredentialsError);
+      }
+
+      _currentUser = await _buildUserModel(firebaseUser);
+      return _currentUser!;
+    } on FirebaseAuthException catch (e) {
+      throw Exception(_mapFirebaseError(e));
+    }
+  }
+
   /// Terminate the active session
   Future<void> logout() async {
     await _firebaseAuth.signOut();

@@ -15,6 +15,7 @@ class AppStrings {
   static const String passwordLabel = 'Password';
   static const String passwordHint = 'Enter password';
   static const String loginButton = 'Sign In';
+  static const String nextButton = 'Next';
   static const String loggingIn = 'Signing in...';
   static const String invalidCredentialsError =
       'Invalid mobile number or password.';
@@ -31,6 +32,27 @@ class AppStrings {
       'Your company access has been deactivated. Contact your administrator.';
   static const String tenantNotFoundError =
       'Company is not configured. Contact your administrator.';
+  static const String companionSessionError =
+      'Could not start your dashboard session. Please try again.';
+
+  // OTP step
+  static const String otpTitle = 'Verify OTP';
+  static const String otpSubtitle = 'Enter the 6-digit code sent to';
+  static const String otpButton = 'Verify';
+  static const String otpVerifying = 'Verifying...';
+  static const String otpResendPrompt = "Didn't receive the code?";
+  static const String otpResendButton = 'Resend OTP';
+  static const String otpResendSentToast = 'OTP resent';
+  static const String otpEmptyError = 'Enter the OTP sent to your mobile number';
+  static const String otpInvalidError = 'Invalid or expired OTP. Please try again.';
+  static const String changeNumberButton = 'Change Number';
+
+  // Geofence
+  static const String outOfBoundaryTitle = 'Out of Boundary Location';
+  static const String outOfBoundaryMessage =
+      'You are outside the allowed location for this account. Please move within range and try again.';
+  static const String outOfBoundaryLogoutButton = 'Logout';
+
   static const String logoutConfirmTitle = 'Sign Out';
   static const String logoutConfirmMessage =
       'Are you sure you want to log out of Companion By Vivin?';

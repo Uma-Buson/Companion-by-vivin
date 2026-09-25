@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import '../constant/app_colors.dart';
 import '../constant/app_strings.dart';
 import '../constant/app_text_styles.dart';
 import '../controller/auth_controller.dart';
 import '../service/permission_service.dart';
-import 'tenant_selector_screen.dart';
+import 'otp_screen.dart';
 import 'web_dashboard_screen.dart';
 
-/// Screen 1: Login Screen with Red & White branding and Admin/1234 verification.
+/// Screen 1: phone-number-first login. UserMaster decides whether the next
+/// step is the password field (shown inline here) or a dedicated OTP
+/// screen - the app never makes that call itself.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -42,35 +45,54 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  Future<void> _handleLogin() async {
-    // Dismiss keyboard
+  Future<void> _handleNext() async {
     FocusScope.of(context).unfocus();
-
-    final success = await _authController.login();
+    final success = await _authController.checkPhoneNumber();
     if (!success || !mounted) return;
 
-    final tenants = _authController.availableTenants;
-    if (tenants.length == 1) {
-      final tenant = tenants.first;
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (context) => WebDashboardScreen(
-            tenantUrl: tenant.tenantUrl,
-            tenantName: tenant.tenantName,
-          ),
-        ),
-      );
-    } else {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (context) => TenantSelectorScreen(tenants: tenants),
-        ),
-      );
+    if (_authController.step == LoginStep.otp) {
+      Navigator.of(context)
+          .push(
+            MaterialPageRoute(
+              builder: (context) => OtpScreen(authController: _authController),
+            ),
+          )
+          .then((_) {
+            // Coming back from "Change Number" - already reset by the
+            // controller, just refresh this screen's own build.
+            if (mounted) setState(() {});
+          });
     }
+    // step == LoginStep.password: stays on this screen, which rebuilds to
+    // show the password field via _onAuthStateChanged.
+  }
+
+  Future<void> _handlePasswordLogin() async {
+    FocusScope.of(context).unfocus();
+    final success = await _authController.loginWithPassword();
+    if (!success || !mounted) return;
+
+    Fluttertoast.showToast(
+      msg: 'Login successful!',
+      backgroundColor: AppColors.success,
+      textColor: AppColors.textOnPrimary,
+      toastLength: Toast.LENGTH_SHORT,
+    );
+
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (context) => WebDashboardScreen(
+          tenants: _authController.availableTenants,
+          session: _authController.companionSession!,
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final isPasswordStep = _authController.step == LoginStep.password;
+
     return Scaffold(
       backgroundColor: AppColors.scaffoldBackground,
       body: SafeArea(
@@ -201,17 +223,21 @@ class _LoginScreenState extends State<LoginScreen> {
                           const SizedBox(height: 16),
                         ],
 
-                        // Username Field
+                        // Phone Number Field
                         Text(
                           AppStrings.usernameLabel,
                           style: AppTextStyles.labelMedium,
                         ),
                         const SizedBox(height: 8),
                         TextField(
-                          controller: _authController.usernameController,
+                          controller: _authController.phoneController,
                           onChanged: (_) => _authController.clearError(),
                           keyboardType: TextInputType.phone,
-                          textInputAction: TextInputAction.next,
+                          textInputAction: isPasswordStep
+                              ? TextInputAction.next
+                              : TextInputAction.done,
+                          onSubmitted: (_) => isPasswordStep ? null : _handleNext(),
+                          readOnly: isPasswordStep,
                           inputFormatters: [
                             FilteringTextInputFormatter.digitsOnly,
                             LengthLimitingTextInputFormatter(10),
@@ -223,6 +249,16 @@ class _LoginScreenState extends State<LoginScreen> {
                               Icons.phone_outlined,
                               color: AppColors.textSecondary,
                             ),
+                            suffixIcon: isPasswordStep
+                                ? IconButton(
+                                    icon: const Icon(
+                                      Icons.edit_outlined,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                    tooltip: AppStrings.changeNumberButton,
+                                    onPressed: _authController.backToPhoneStep,
+                                  )
+                                : null,
                             filled: true,
                             fillColor: AppColors.scaffoldBackground,
                             contentPadding: const EdgeInsets.symmetric(
@@ -250,70 +286,74 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ),
                         ),
-                        const SizedBox(height: 18),
 
-                        // Password Field
-                        Text(
-                          AppStrings.passwordLabel,
-                          style: AppTextStyles.labelMedium,
-                        ),
-                        const SizedBox(height: 8),
-                        TextField(
-                          controller: _authController.passwordController,
-                          obscureText: _authController.obscurePassword,
-                          onChanged: (_) => _authController.clearError(),
-                          textInputAction: TextInputAction.done,
-                          onSubmitted: (_) => _handleLogin(),
-                          decoration: InputDecoration(
-                            hintText: AppStrings.passwordHint,
-                            hintStyle: AppTextStyles.bodySmall,
-                            prefixIcon: const Icon(
-                              Icons.lock_outline_rounded,
-                              color: AppColors.textSecondary,
-                            ),
-                            suffixIcon: IconButton(
-                              icon: Icon(
-                                _authController.obscurePassword
-                                    ? Icons.visibility_off_outlined
-                                    : Icons.visibility_outlined,
+                        // Password Field - only once UserMaster says this
+                        // number uses password login.
+                        if (isPasswordStep) ...[
+                          const SizedBox(height: 18),
+                          Text(
+                            AppStrings.passwordLabel,
+                            style: AppTextStyles.labelMedium,
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: _authController.passwordController,
+                            obscureText: _authController.obscurePassword,
+                            onChanged: (_) => _authController.clearError(),
+                            textInputAction: TextInputAction.done,
+                            onSubmitted: (_) => _handlePasswordLogin(),
+                            decoration: InputDecoration(
+                              hintText: AppStrings.passwordHint,
+                              hintStyle: AppTextStyles.bodySmall,
+                              prefixIcon: const Icon(
+                                Icons.lock_outline_rounded,
                                 color: AppColors.textSecondary,
                               ),
-                              onPressed:
-                                  _authController.togglePasswordVisibility,
-                            ),
-                            filled: true,
-                            fillColor: AppColors.scaffoldBackground,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 14,
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                              borderSide: const BorderSide(
-                                color: AppColors.inputBorder,
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  _authController.obscurePassword
+                                      ? Icons.visibility_off_outlined
+                                      : Icons.visibility_outlined,
+                                  color: AppColors.textSecondary,
+                                ),
+                                onPressed:
+                                    _authController.togglePasswordVisibility,
                               ),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                              borderSide: const BorderSide(
-                                color: AppColors.primaryRed,
-                                width: 2,
+                              filled: true,
+                              fillColor: AppColors.scaffoldBackground,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 14,
                               ),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                              borderSide: const BorderSide(
-                                color: AppColors.inputBorder,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: const BorderSide(
+                                  color: AppColors.inputBorder,
+                                ),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: const BorderSide(
+                                  color: AppColors.primaryRed,
+                                  width: 2,
+                                ),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: const BorderSide(
+                                  color: AppColors.inputBorder,
+                                ),
                               ),
                             ),
                           ),
-                        ),
+                        ],
                         const SizedBox(height: 24),
 
-                        // Login Button (Themed Red from Image 1)
+                        // Next / Login Button
                         ElevatedButton(
-                          onPressed:
-                              _authController.isLoading ? null : _handleLogin,
+                          onPressed: _authController.isLoading
+                              ? null
+                              : (isPasswordStep ? _handlePasswordLogin : _handleNext),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.primaryRed,
                             foregroundColor: AppColors.textOnPrimary,
@@ -335,8 +375,10 @@ class _LoginScreenState extends State<LoginScreen> {
                                       ),
                                     ),
                                   )
-                                  : const Text(
-                                    AppStrings.loginButton,
+                                  : Text(
+                                    isPasswordStep
+                                        ? AppStrings.loginButton
+                                        : AppStrings.nextButton,
                                     style: AppTextStyles.buttonLabel,
                                   ),
                         ),
