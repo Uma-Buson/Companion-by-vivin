@@ -5,6 +5,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:permission_handler/permission_handler.dart' as ph;
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
@@ -402,7 +403,17 @@ class _TenantWebViewHolder {
   late final WebViewController controller;
   final ValueNotifier<bool> isLoading = ValueNotifier(true);
   final ValueNotifier<String?> loadError = ValueNotifier(null);
+  // Each navigation gets its own one-shot silent retry, not the WebView's
+  // lifetime: _autoRetried used to be set once and never reset, so only the
+  // very first page load ever got the "retry once before showing an error"
+  // cushion - every navigation after that (including every back/forward)
+  // had none left and hit the error screen on the first blip, which is why
+  // it was consistent rather than occasional. _isAutoRetrying marks the
+  // reload triggered BY that retry so its own onPageStarted doesn't grant
+  // itself a fresh budget too (which would retry forever on a genuinely
+  // dead connection).
   bool _autoRetried = false;
+  bool _isAutoRetrying = false;
 
   // Guards the localStorage injection + dashboard redirect so they only
   // ever run once, on the tenant's very first page load. Every later
@@ -446,11 +457,30 @@ class _TenantWebViewHolder {
       // The web app's SKU LOOK-UP "Scan QR Code" feature calls
       // getUserMedia() for camera access. Android WebView denies that by
       // default (same underlying gap as geolocation above), which leaves
-      // the scanner stuck on "Starting camera..." forever. Grant whatever
-      // media types the page actually asked for (camera and/or mic).
+      // the scanner stuck on "Starting camera..." forever. Granting this
+      // WebView-level request alone isn't enough though: Android's OS-level
+      // runtime CAMERA/RECORD_AUDIO permission is a separate gate the app
+      // process itself must hold, or camera2 throws a SecurityException
+      // even after the WebView side says yes. Request whichever OS
+      // permissions the page actually asked for first, and only grant the
+      // WebView request if they were actually approved.
       androidController.setOnPlatformPermissionRequest(
         (request) async {
-          await request.grant();
+          final osPermissions = <ph.Permission>[
+            if (request.types.contains(WebViewPermissionResourceType.camera))
+              ph.Permission.camera,
+            if (request.types.contains(WebViewPermissionResourceType.microphone))
+              ph.Permission.microphone,
+          ];
+
+          final statuses = await osPermissions.request();
+          final allGranted = statuses.values.every((s) => s.isGranted);
+
+          if (allGranted) {
+            await request.grant();
+          } else {
+            await request.deny();
+          }
         },
       );
     }
@@ -459,6 +489,12 @@ class _TenantWebViewHolder {
       ..setNavigationDelegate(
         NavigationDelegate(
           onPageStarted: (_) {
+            // A fresh navigation (not the auto-retry's own reload) gets its
+            // own retry budget - see the field doc on _autoRetried.
+            if (!_isAutoRetrying) {
+              _autoRetried = false;
+            }
+            _isAutoRetrying = false;
             isLoading.value = true;
             loadError.value = null;
           },
@@ -495,12 +531,25 @@ class _TenantWebViewHolder {
             await _injectLogoutWatcher();
           },
           onWebResourceError: (error) {
+            // onWebResourceError fires for EVERY failed resource on the
+            // page, not just the page navigation itself - a failed
+            // analytics ping, a SignalR negotiation request, or any other
+            // subresource trips this the same way a failed page load does.
+            // The web app calls several such best-effort endpoints that
+            // routinely fail without breaking the page. Only a main-frame
+            // failure means the page itself didn't load - anything else
+            // must be ignored, or the error screen (and its silent-retry
+            // reload) fires constantly for things that were never actually
+            // broken.
+            if (error.isForMainFrame != true) return;
+
             isLoading.value = false;
             // A cold LAN connection sometimes times out on the very first
             // attempt; retry silently once before bothering the user with
             // an error screen.
             if (!_autoRetried) {
               _autoRetried = true;
+              _isAutoRetrying = true;
               Future.delayed(const Duration(milliseconds: 800), () {
                 controller.reload();
               });
