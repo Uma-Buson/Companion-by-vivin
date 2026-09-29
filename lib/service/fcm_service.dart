@@ -161,7 +161,12 @@ class FcmService {
 
   /// Setup local notifications for Android & iOS foreground display
   Future<void> _setupLocalNotifications() async {
-    const androidSettings = AndroidInitializationSettings('@mipmap/launcher_icon');
+    // Android renders the status-bar/notification icon using only its alpha
+    // channel (silhouette), discarding color entirely - the full-color
+    // launcher icon rendered as an unrecognizable blob there. This is a
+    // dedicated white-on-transparent silhouette generated from that same
+    // logo (see android/app/src/main/res/drawable-*/ic_notification.png).
+    const androidSettings = AndroidInitializationSettings('@drawable/ic_notification');
     const iosSettings = DarwinInitializationSettings(
       requestAlertPermission: true,
       requestBadgePermission: true,
@@ -224,7 +229,13 @@ class FcmService {
             _channel.id,
             _channel.name,
             channelDescription: _channel.description,
-            icon: '@mipmap/launcher_icon',
+            icon: '@drawable/ic_notification',
+            // The small status-bar icon is always monochrome by Android
+            // design - the OS itself strips color there, for every app.
+            // The large icon shown in the expanded notification body has
+            // no such restriction, so that's where the actual colored logo
+            // can show.
+            largeIcon: const DrawableResourceAndroidBitmap('launcher_icon'),
             importance: Importance.max,
             priority: Priority.high,
             playSound: true,
