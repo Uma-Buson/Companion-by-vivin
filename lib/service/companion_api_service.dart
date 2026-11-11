@@ -4,6 +4,17 @@ import 'package:http/http.dart' as http;
 
 import '../model/companion_session_model.dart';
 
+/// The backend recognised this user but their account isn't allowed to use
+/// the mobile app (MobileAccess switched off). Distinct from a generic
+/// failure so login doesn't treat it as "wrong backend, try the next one".
+class MobileAccessDeniedException implements Exception {
+  final String message;
+  const MobileAccessDeniedException(this.message);
+
+  @override
+  String toString() => message;
+}
+
 /// Talks to the companionAPI backend directly (as opposed to the web
 /// dashboard, which the app only ever drives through a WebView). Every call
 /// takes the caller's tenant `baseUrl` explicitly - tenants can run on
@@ -27,6 +38,9 @@ class CompanionApiService {
         )
         .timeout(_timeout);
 
+    if (response.statusCode == 403) {
+      throw MobileAccessDeniedException(response.body);
+    }
     if (response.statusCode != 200) {
       throw Exception(
         'LoginWithFirebase failed (${response.statusCode}): ${response.body}',
@@ -58,6 +72,10 @@ class CompanionApiService {
     for (final baseUrl in baseUrls) {
       try {
         return await loginWithFirebase(baseUrl, idToken);
+      } on MobileAccessDeniedException {
+        // This backend found the user and said no - trying another
+        // company's backend can't change that.
+        rethrow;
       } catch (e) {
         lastError = e;
       }

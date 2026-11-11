@@ -253,12 +253,14 @@ class AuthController extends ChangeNotifier {
     } catch (e) {
       await _authService.logout();
       _isLoading = false;
-      _errorMessage = AppStrings.companionSessionError;
+      _errorMessage = e is MobileAccessDeniedException
+          ? AppStrings.mobileAccessDeniedError
+          : AppStrings.companionSessionError;
       notifyListeners();
       return false;
     }
 
-    // Note: the location boundary (latlongActive/geoDistanceMeters on
+    // Note: the location boundary (latlongActive/geofences on
     // CompanionSession) is enforced continuously on the dashboard itself
     // (WebDashboardScreen), not here - being outside it blurs the screen
     // rather than blocking login, so a user already out of range still

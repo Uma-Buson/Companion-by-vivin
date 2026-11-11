@@ -34,6 +34,8 @@ class AppStrings {
       'Company is not configured. Contact your administrator.';
   static const String companionSessionError =
       'Could not start your dashboard session. Please try again.';
+  static const String mobileAccessDeniedError =
+      'Mobile login is not allowed for this user. Contact your administrator.';
 
   // OTP step
   static const String otpTitle = 'Verify OTP';

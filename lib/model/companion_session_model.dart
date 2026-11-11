@@ -21,14 +21,14 @@ class CompanionSession {
   final String stateCode;
   final String stateName;
 
-  /// Optional geofence: when latlongActive is true, login is only allowed
-  /// within geoDistance meters of (latitude, longitude). Not part of the
-  /// web dashboard's own localStorage session - purely a native-side gate
-  /// checked once at login (see AuthController).
+  /// Optional geofence: when latlongActive is true, the dashboard is only
+  /// usable while within an allowed zone. A user can be assigned several
+  /// stores, so the API returns latitute/longtitude/geoDistance as
+  /// comma-separated lists, one entry per store - being inside ANY zone is
+  /// enough. Not part of the web dashboard's own localStorage session -
+  /// purely a native-side gate (see WebDashboardScreen).
   final bool latlongActive;
-  final double? latitude;
-  final double? longitude;
-  final double? geoDistanceMeters;
+  final List<GeoFenceZone> geofences;
 
   const CompanionSession({
     required this.token,
@@ -45,9 +45,7 @@ class CompanionSession {
     required this.stateCode,
     required this.stateName,
     this.latlongActive = false,
-    this.latitude,
-    this.longitude,
-    this.geoDistanceMeters,
+    this.geofences = const [],
   });
 
   factory CompanionSession.fromJson(Map<String, dynamic> json) {
@@ -66,9 +64,11 @@ class CompanionSession {
       stateCode: json['stateCode'] as String? ?? '',
       stateName: json['stateName'] as String? ?? '',
       latlongActive: json['latlongActive'] as bool? ?? false,
-      latitude: double.tryParse(json['latitute']?.toString() ?? ''),
-      longitude: double.tryParse(json['longtitude']?.toString() ?? ''),
-      geoDistanceMeters: double.tryParse(json['geoDistance']?.toString() ?? ''),
+      geofences: GeoFenceZone.parseList(
+        latitudes: json['latitute']?.toString(),
+        longitudes: json['longtitude']?.toString(),
+        distances: json['geoDistance']?.toString(),
+      ),
     );
   }
 
@@ -90,4 +90,45 @@ class CompanionSession {
         'stateCode': stateCode,
         'stateName': stateName,
       };
+}
+
+/// One allowed circle: a store's coordinates and its radius in meters.
+class GeoFenceZone {
+  final double latitude;
+  final double longitude;
+  final double radiusMeters;
+
+  const GeoFenceZone({
+    required this.latitude,
+    required this.longitude,
+    required this.radiusMeters,
+  });
+
+  /// Mirrors the web app's checkGeoFence parsing so both enforce the same
+  /// zones: each field is a comma-separated list, entries are paired up by
+  /// position, and any entry with a missing or non-numeric part is dropped.
+  static List<GeoFenceZone> parseList({
+    String? latitudes,
+    String? longitudes,
+    String? distances,
+  }) {
+    List<double?> parse(String? raw) => (raw ?? '')
+        .split(',')
+        .map((s) => double.tryParse(s.trim()))
+        .toList();
+
+    final lats = parse(latitudes);
+    final lngs = parse(longitudes);
+    final dists = parse(distances);
+
+    final zones = <GeoFenceZone>[];
+    for (var i = 0; i < lats.length; i++) {
+      final lat = lats[i];
+      final lng = i < lngs.length ? lngs[i] : null;
+      final max = i < dists.length ? dists[i] : null;
+      if (lat == null || lng == null || max == null) continue;
+      zones.add(GeoFenceZone(latitude: lat, longitude: lng, radiusMeters: max));
+    }
+    return zones;
+  }
 }

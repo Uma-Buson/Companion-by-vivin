@@ -81,10 +81,9 @@ class _WebDashboardScreenState extends State<WebDashboardScreen>
   /// stays open.
   void _startGeofenceMonitorIfNeeded() {
     final session = widget.session;
-    if (!session.latlongActive ||
-        session.latitude == null ||
-        session.longitude == null ||
-        session.geoDistanceMeters == null) {
+    // No usable zone means nothing to enforce (same as the web's
+    // checkGeoFence returning "ok" when no store parses).
+    if (!session.latlongActive || session.geofences.isEmpty) {
       return;
     }
 
@@ -105,13 +104,15 @@ class _WebDashboardScreenState extends State<WebDashboardScreen>
       return;
     }
 
-    final distance = Geolocator.distanceBetween(
-      location.latitude!,
-      location.longitude!,
-      session.latitude!,
-      session.longitude!,
-    );
-    setState(() => _isOutOfBoundary = distance > session.geoDistanceMeters!);
+    final withinAnyZone = session.geofences.any((zone) =>
+        Geolocator.distanceBetween(
+          location.latitude!,
+          location.longitude!,
+          zone.latitude,
+          zone.longitude,
+        ) <=
+        zone.radiusMeters);
+    setState(() => _isOutOfBoundary = !withinAnyZone);
   }
 
   void _ensureHolder(int index) {
