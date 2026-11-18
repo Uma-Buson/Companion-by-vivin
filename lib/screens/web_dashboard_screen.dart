@@ -8,6 +8,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart' as ph;
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
+import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 
 import '../constant/app_colors.dart';
 import '../constant/app_strings.dart';
@@ -17,6 +18,35 @@ import '../model/tenant_model.dart';
 import '../service/auth_service.dart';
 import '../service/location_service.dart';
 import 'login_screen.dart';
+
+/// Shared by both the Android and iOS WebView permission callbacks below:
+/// the WebView-level camera/mic grant alone isn't enough on either
+/// platform, since the OS-level runtime permission is a separate gate the
+/// app process itself must hold - request whichever OS permissions the
+/// page actually asked for first, and only grant the WebView request if
+/// they were actually approved.
+Future<void> _grantIfOsPermissionsGranted(PlatformWebViewPermissionRequest request) async {
+  debugPrint('[WebViewPermission] Page requested: ${request.types}');
+
+  final osPermissions = <ph.Permission>[
+    if (request.types.contains(WebViewPermissionResourceType.camera))
+      ph.Permission.camera,
+    if (request.types.contains(WebViewPermissionResourceType.microphone))
+      ph.Permission.microphone,
+  ];
+
+  final statuses = await osPermissions.request();
+  final allGranted = statuses.values.every((s) => s.isGranted);
+  debugPrint('[WebViewPermission] OS permission statuses: $statuses, allGranted=$allGranted');
+
+  if (allGranted) {
+    await request.grant();
+    debugPrint('[WebViewPermission] Granted WebView request.');
+  } else {
+    await request.deny();
+    debugPrint('[WebViewPermission] Denied WebView request.');
+  }
+}
 
 /// Post-login destination. If the user has one tenant, this just shows its
 /// WebView full-screen. If they have several, the app bar shows a tab per
@@ -465,25 +495,20 @@ class _TenantWebViewHolder {
       // even after the WebView side says yes. Request whichever OS
       // permissions the page actually asked for first, and only grant the
       // WebView request if they were actually approved.
-      androidController.setOnPlatformPermissionRequest(
-        (request) async {
-          final osPermissions = <ph.Permission>[
-            if (request.types.contains(WebViewPermissionResourceType.camera))
-              ph.Permission.camera,
-            if (request.types.contains(WebViewPermissionResourceType.microphone))
-              ph.Permission.microphone,
-          ];
+      androidController.setOnPlatformPermissionRequest(_grantIfOsPermissionsGranted);
+    }
 
-          final statuses = await osPermissions.request();
-          final allGranted = statuses.values.every((s) => s.isGranted);
-
-          if (allGranted) {
-            await request.grant();
-          } else {
-            await request.deny();
-          }
-        },
-      );
+    // Same gap as above, on iOS: WKWebView also denies getUserMedia() by
+    // default. WebKitWebViewController exposes the same
+    // setOnPlatformPermissionRequest API (shared platform interface), so
+    // the grant logic itself is identical - only the native delegate
+    // backing it differs. Note the underlying WKUIDelegate method Apple
+    // uses for this is iOS 15+; on older iOS, WebKit falls back to its own
+    // default (unprompted) behavior for the page's camera/mic request
+    // instead of calling this callback at all.
+    if (Platform.isIOS) {
+      final iosController = controller.platform as WebKitWebViewController;
+      iosController.setOnPlatformPermissionRequest(_grantIfOsPermissionsGranted);
     }
 
     controller

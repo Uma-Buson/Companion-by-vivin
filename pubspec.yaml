@@ -34,17 +34,34 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
-  device_info_plus: ^12.4.0
+  # Pinned below 12.4.0: that version's iOS native code calls
+  # NSProcessInfo.isiOSAppOnVision unconditionally, an iOS 26 SDK-only API
+  # with no availability guard, which fails to compile on older Xcode/SDKs.
+  # Not used by this app (device_service.dart doesn't read that property).
+  device_info_plus: 12.3.0
   geolocator: ^14.0.2
   mobile_scanner: ^7.4.0
-  screen_protector: ^1.5.3
-  firebase_core: ^4.14.0
-  firebase_messaging: ^16.6.0
+  # Pinned to 1.4.13: 1.5.1 refactored the iOS native side onto a rewritten
+  # ScreenPreventer API but shipped a mismatched prebuilt ScreenPreventerKit
+  # binary (part of the CocoaPods ScreenProtectorKit dependency), so 1.5.1+
+  # fails to compile via CocoaPods ("ScreenPreventer cannot be constructed
+  # because it has no accessible initializers", etc.). 1.4.13 is the last
+  # version before that refactor; it has the same Dart API this app uses.
+  screen_protector: 1.4.13
+  # firebase_core/firebase_auth/cloud_firestore/firebase_messaging pinned
+  # below the FlutterFire release wave (PR #18054) that migrated their iOS
+  # side to UIScene lifecycle (FlutterSceneLifeCycleDelegate) - that type
+  # doesn't exist in this project's Flutter engine (3.29.3), so anything
+  # from that wave onward fails to compile for iOS. These four versions
+  # are the latest ones before it and are mutually compatible.
+  firebase_core: 4.5.0
+  firebase_messaging: 16.0.4
   flutter_local_notifications: ^19.5.0
-  firebase_auth: ^6.6.1
-  cloud_firestore: ^6.10.0
+  firebase_auth: 6.2.0
+  cloud_firestore: 6.1.3
   webview_flutter: ^4.13.0
   webview_flutter_android: ^4.10.1
+  webview_flutter_wkwebview: ^3.23.0
   permission_handler: ^11.3.1
   fluttertoast: ^9.0.0
   http: ^1.6.0

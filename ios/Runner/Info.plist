@@ -26,6 +26,8 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Camera permission is required to scan QR codes.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Microphone access is required by the dashboard's scan feature.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Location permission is required to display your current latitude and longitude.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
@@ -105,18 +106,37 @@ class RemoteFirebaseConfigService {
     }
   }
 
+  // The hosted config is a `google-services.json`-shaped file (Android's
+  // format), which only ever carries an Android client entry - iOS has no
+  // equivalent entry to select there. Project-level fields (project ID,
+  // storage bucket, sender ID) are shared across platforms in the same
+  // Firebase project, so those still come from the remote config; only
+  // the iOS app's own apiKey/appId (from its Firebase-console
+  // registration, bundle id com.companion.vivin) are fixed locally.
+  static const String _iosApiKey = 'AIzaSyA-BrsxcdfI0wfH9NAV4L5Gg-Fz1wP4LTs';
+  static const String _iosAppId = '1:868751188751:ios:ed26f4a96a46397bc2d47a';
+
   /// Builds [FirebaseOptions] from a `google-services.json`-shaped map.
   FirebaseOptions _optionsFromConfig(Map<String, dynamic> config) {
     final projectInfo = config['project_info'] as Map<String, dynamic>;
-    final client = (config['client'] as List<dynamic>).first
-        as Map<String, dynamic>;
-    final clientInfo = client['client_info'] as Map<String, dynamic>;
-    final apiKeys = client['api_key'] as List<dynamic>;
-    final apiKey = (apiKeys.first as Map<String, dynamic>)['current_key'] as String;
+
+    String apiKey;
+    String appId;
+    if (Platform.isIOS) {
+      apiKey = _iosApiKey;
+      appId = _iosAppId;
+    } else {
+      final client = (config['client'] as List<dynamic>).first
+          as Map<String, dynamic>;
+      final clientInfo = client['client_info'] as Map<String, dynamic>;
+      final apiKeys = client['api_key'] as List<dynamic>;
+      apiKey = (apiKeys.first as Map<String, dynamic>)['current_key'] as String;
+      appId = clientInfo['mobilesdk_app_id'] as String;
+    }
 
     return FirebaseOptions(
       apiKey: apiKey,
-      appId: clientInfo['mobilesdk_app_id'] as String,
+      appId: appId,
       messagingSenderId: projectInfo['project_number'] as String,
       projectId: projectInfo['project_id'] as String,
       storageBucket: projectInfo['storage_bucket'] as String?,
