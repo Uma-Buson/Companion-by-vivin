@@ -455,7 +455,20 @@ class _TenantWebViewHolder {
   bool _sessionInjected = false;
 
   _TenantWebViewHolder(this.tenant, this.session, {required this.onLoggedOut}) {
-    controller = WebViewController()
+    // iOS WKWebView defaults (allowsInlineMediaPlayback=false, and audio/video
+    // autoplay requiring a user gesture) stop the SKU LOOK-UP scanner's live
+    // camera <video> from rendering even though the camera permission is
+    // granted: the feed never starts. Allow inline playback and autoplay so
+    // getUserMedia() streams show up in the page. Android is unaffected.
+    final PlatformWebViewControllerCreationParams creationParams =
+        Platform.isIOS
+            ? WebKitWebViewControllerCreationParams(
+                allowsInlineMediaPlayback: true,
+                mediaTypesRequiringUserAction: const <PlaybackMediaTypes>{},
+              )
+            : const PlatformWebViewControllerCreationParams();
+
+    controller = WebViewController.fromPlatformCreationParams(creationParams)
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(AppColors.scaffoldBackground)
       // The web app's own Logout button navigates to /auth/login via the
