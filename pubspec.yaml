@@ -83,9 +83,12 @@ flutter_launcher_icons:
   android: "launcher_icon"
   ios: true
   image_path: "assets/images/logo.png"
+  # App Store rejects icons with transparency: flatten the iOS icon on white.
+  remove_alpha_ios: true
   min_sdk_android: 21
   adaptive_icon_background: "#FFFFFF"
-  adaptive_icon_foreground: "assets/images/logo.png"
+  # Padded copy of the logo so Android's circular/squircle crop doesn't cut it.
+  adaptive_icon_foreground: "assets/images/logo_foreground.png"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
