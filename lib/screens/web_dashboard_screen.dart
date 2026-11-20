@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart' as ph;
@@ -16,6 +17,7 @@ import '../constant/app_text_styles.dart';
 import '../model/companion_session_model.dart';
 import '../model/tenant_model.dart';
 import '../service/auth_service.dart';
+import '../service/companion_api_service.dart';
 import '../service/location_service.dart';
 import 'login_screen.dart';
 
@@ -149,8 +151,28 @@ class _WebDashboardScreenState extends State<WebDashboardScreen>
     _holders[index] ??= _TenantWebViewHolder(
       widget.tenants[index],
       widget.session,
+      sessionFor: _sessionFor,
       onLoggedOut: _handleWebLogout,
     );
+  }
+
+  // Each company runs its own companionAPI and companiondb, so the session
+  // (user id, region/zone defaults, JWT) from one company's LoginWithFirebase
+  // is wrong for another. With several tenants, every tab signs in against
+  // ITS OWN backend with the same Firebase identity. Single-tenant users keep
+  // the session they already have (null = use widget.session).
+  final Map<String, Future<CompanionSession>> _tenantSessions = {};
+
+  Future<CompanionSession?> _sessionFor(TenantMaster tenant) async {
+    if (widget.tenants.length < 2 || tenant.apiBaseUrl.isEmpty) return null;
+
+    return _tenantSessions.putIfAbsent(tenant.tenantId, () async {
+      final idToken = await FirebaseAuth.instance.currentUser?.getIdToken();
+      if (idToken == null || idToken.isEmpty) {
+        throw Exception('No Firebase session to sign in to ${tenant.tenantId}.');
+      }
+      return CompanionApiService().loginWithFirebase(tenant.apiBaseUrl, idToken);
+    });
   }
 
   // The web dashboard's own logout button clears its localStorage and
@@ -430,6 +452,9 @@ class _TenantPill extends StatelessWidget {
 class _TenantWebViewHolder {
   final TenantMaster tenant;
   final CompanionSession session;
+  // Resolves THIS tenant's own session (null = use [session]); see
+  // _WebDashboardScreenState._sessionFor.
+  final Future<CompanionSession?> Function(TenantMaster tenant) sessionFor;
   final VoidCallback onLoggedOut;
   late final WebViewController controller;
   final ValueNotifier<bool> isLoading = ValueNotifier(true);
@@ -454,7 +479,12 @@ class _TenantWebViewHolder {
   // onPageFinished would loop forever.
   bool _sessionInjected = false;
 
-  _TenantWebViewHolder(this.tenant, this.session, {required this.onLoggedOut}) {
+  _TenantWebViewHolder(
+    this.tenant,
+    this.session, {
+    required this.sessionFor,
+    required this.onLoggedOut,
+  }) {
     // iOS WKWebView defaults (allowsInlineMediaPlayback=false, and audio/video
     // autoplay requiring a user gesture) stop the SKU LOOK-UP scanner's live
     // camera <video> from rendering even though the camera permission is
@@ -607,7 +637,16 @@ class _TenantWebViewHolder {
   /// auth gate - which only ever checks localStorage - treats this as a
   /// signed-in session without ever seeing its own login page.
   Future<void> _injectSessionAndGoToDashboard() async {
-    final entries = session.toLocalStorageEntries();
+    CompanionSession tenantSession;
+    try {
+      tenantSession = await sessionFor(tenant) ?? session;
+    } catch (_) {
+      // Couldn't sign in to this tenant's own backend: leave its own login
+      // page showing rather than inject another company's session.
+      return;
+    }
+
+    final entries = tenantSession.toLocalStorageEntries();
     final statements = entries.entries
         .map((e) => "localStorage.setItem('${e.key}', ${jsonEncode(e.value)});")
         .join('\n');
