@@ -19,8 +19,13 @@ class SecurityService {
 
     try {
       if (Platform.isAndroid || Platform.isIOS) {
-        // Prevent screenshot capture
-        await ScreenProtector.preventScreenshotOn();
+        // Prevent screenshot capture. Android only: on iOS this works by
+        // re-parenting the app's window into a secure text field, which on
+        // recent iOS versions renders every screen black (also in-app, not
+        // just in screenshots), regardless of theme.
+        if (Platform.isAndroid) {
+          await ScreenProtector.preventScreenshotOn();
+        }
 
         // Prevent data leakage in recent apps / multitasking switcher with blur
         await ScreenProtector.protectDataLeakageWithBlur();
@@ -39,7 +44,9 @@ class SecurityService {
 
     try {
       if (Platform.isAndroid || Platform.isIOS) {
-        await ScreenProtector.preventScreenshotOff();
+        if (Platform.isAndroid) {
+          await ScreenProtector.preventScreenshotOff();
+        }
         await ScreenProtector.protectDataLeakageWithBlurOff();
         _isProtected = false;
       }

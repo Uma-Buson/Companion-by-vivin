@@ -517,6 +517,13 @@ class _TenantWebViewHolder {
     // Without this, every page that asks shows "Please enable location
     // access" inside the WebView regardless of the device's real
     // permission state.
+    // iOS WKWebView zooms the page on double-tap / rapid taps (and then looks
+    // "maximized" with no way back). The dashboard is a responsive web app
+    // that never needs pinch or double-tap zoom, so turn it off on iOS only.
+    if (Platform.isIOS) {
+      unawaited(controller.enableZoom(false));
+    }
+
     if (Platform.isAndroid) {
       final androidController = controller.platform as AndroidWebViewController;
       androidController.setGeolocationPermissionsPromptCallbacks(
